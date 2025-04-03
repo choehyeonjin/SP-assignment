@@ -1,0 +1,209 @@
+#!/bin/bash
+
+#Change current working directory to Home
+cd
+
+#Make "work" directory
+mkdir work
+
+#Change current working directory to "work"
+cd work
+
+#Make "file1.txt" file with some contents
+echo "Hello This is file 1" > file1.txt
+
+#Make "file2.txt" file with some contents
+echo "Hello This is file 2" > file2.txt
+
+#Make "file3.txt" file with some contents
+echo "more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+
+more this is file 3 !
+" > file3.txt
+
+#Make "hello.txt" file with some contents
+echo "hello world
+My Name is N~~~
+How are you?" > hello.txt
+
+#Make "work/SP_lab" directory
+mkdir SP_lab
+
+#Change current working directory to "SP_lab"
+cd SP_lab
+
+#Make "fileA.txt" file with some contents
+echo "This is file A"> fileA.txt
+
+echo "This is file C"> fileC.txt
+
