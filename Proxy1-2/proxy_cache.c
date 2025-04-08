@@ -1,13 +1,13 @@
 // =================================================================
 // File Name    : proxy_cache.c
-// Date         : 2025/04/02
+// Date         : 2025/04/09
 // OS           : Ubuntu 22.04 LTS 64bits
 // Author       : Choe Hyeon Jin
 // Student ID   : 2023202070
 // -----------------------------------------------------------------
-// Title        : System Programming proxy Assignment #1-1
+// Title        : System Programming proxy Assignment #1-2
 // Description  : A program that converts the input URL into SHA1
-//                and creates cache directory and file
+//                and creates cache directory, file and miss/hit log
 // =================================================================
 
 #include <stdio.h> // sprintf()
@@ -72,13 +72,13 @@ int createLogFile(char* home, int hit) {
 // -----------------------------------------------------------------
 // Input        : -
 // Output       : int - 0 success
-// Purpose      : Getting URL from user and creating cache file
-//                based on SHA1 hash
+// Purpose      : Getting URL from user, creating cache file
+//                based on SHA1 hash, writing hit/miss and run time log
 // =================================================================
 
 int main() {
 	time_t startTime;
-	time(&startTime);
+	time(&startTime); // save program start time
 	char input_url[256]; // input buffer
 	char hashed_url[41]; // hashed buffer
 
@@ -88,77 +88,77 @@ int main() {
 
 	char root_path[300];
 	sprintf(root_path, "%s/cache", home); // ~/cache
-	umask(0);
-	mkdir(root_path, 0777); // create cache directory
+	umask(0); // set umask 0
+	mkdir(root_path, 0777); // create cache dir
 
 	char log_path[300];
 	sprintf(log_path, "%s/logfile", home); // ~/logfile
-	mkdir(log_path, 0777); // create cache directory
+	mkdir(log_path, 0777); // create log dir
 	chdir(log_path); // cd to ~/logfile
-	FILE* fp = fopen("logfile.txt", "a"); // create log file
+	FILE* fp = fopen("logfile.txt", "a"); // open log file
 
 	int hit = 0;
 	int miss = 0;
 	while (1) {
 		printf("input url> ");
-		scanf("%s", input_url); // read input
+		scanf("%s", input_url); // get input
 		time_t t;
-		time(&t);
+		time(&t); // get current time
 		struct tm* lt = localtime(&t);
 
-		if (strcmp(input_url, "bye") == 0) { // exit if input "bye"
+		if (strcmp(input_url, "bye") == 0) { // check if "bye"
 			time_t endTime;
-			time(&endTime);
-			int runTime = endTime - startTime;
+			time(&endTime); // save program end time
+			int runTime = endTime - startTime; // calc run time
 			fprintf(fp, "[Terminated] run time: %02d sec. #request hit : %d, miss : %d\n",
-				runTime, hit, miss);
-			fclose(fp);
+				runTime, hit, miss); // write terminate log
+			fclose(fp); // close log
 			break;
 		}
 		sha1_hash(input_url, hashed_url); // get SHA1 hash URL
 
-		char cache_dirname[4]; // first 3 letters
+		char cache_dirname[4]; // first 3 chars
 		strncpy(cache_dirname, hashed_url, 3);
 		cache_dirname[3] = '\0';
 		char dir_path[304];
-		sprintf(dir_path, "%s/%s", root_path, cache_dirname); // ~/cache/[cache_dirname]
+		sprintf(dir_path, "%s/%s", root_path, cache_dirname); // ~/cache/xxx
 
 		chdir(root_path); // cd to ~/cache 
 		mkdir(cache_dirname, 0777); // create cache subdir
 
-		char cache_filename[38]; // remaining 37 letters
+		char cache_filename[38]; // remaining 37 chars
 		strncpy(cache_filename, hashed_url + 3, 37);
 		cache_filename[37] = '\0';
 
-		// check if hit or miss
+		// check hit or miss
 		int hitFlag = 0;
 		struct dirent* pFile;
 		DIR* pDir;
 		pDir = opendir(cache_dirname);
 		for (pFile = readdir(pDir); pFile; pFile = readdir(pDir)) {
 			if (strcmp(pFile->d_name, cache_filename) == 0) { // hit
-				hit++;
+				hit++; // count hit
 				hitFlag = 1;
 				break;
 			}
 		}
 		closedir(pDir);
 		if (!hitFlag) { // miss
-			chdir(dir_path); // cd to ~/cache/[cache_dirname]
+			chdir(dir_path); // cd to ~/cache/xxx
 			creat(cache_filename, 0777); // create cache file
-			miss++;
+			miss++; // count miss
 		}
 		
 		chdir(log_path); // cd to ~/logfile
 		if (!hitFlag) { // miss
-			if (fp != NULL) {
+			if (fp != NULL) { // write miss log
 				fprintf(fp, "[Miss]%s-[%02d/%02d/%02d, %02d:%02d:%02d]\n",
 					input_url, lt->tm_year + 1900, lt->tm_mon + 1, 
 					lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec);
 			}
 		}
 		else { // hit
-			if (fp != NULL) {
+			if (fp != NULL) { // write hit log
 				fprintf(fp, "[Hit]%s/%s-[%02d/%02d/%02d, %02d:%02d:%02d]\n",
 					cache_dirname, cache_filename, lt->tm_year + 1900,
 					lt->tm_mon + 1, lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec);
