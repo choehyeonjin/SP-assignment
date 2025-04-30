@@ -1,13 +1,13 @@
 // =================================================================
 // File Name    : proxy_cache.c
-// Date         : 2025/04/09
+// Date         : 2025/04/02
 // OS           : Ubuntu 22.04 LTS 64bits
 // Author       : Choe Hyeon Jin
 // Student ID   : 2023202070
 // -----------------------------------------------------------------
-// Title        : System Programming proxy Assignment #1-2
+// Title        : System Programming proxy Assignment #1-1
 // Description  : A program that converts the input URL into SHA1
-//                and creates cache directory and file and miss/hit log
+//                and creates cache directory and file
 // =================================================================
 
 #include <stdio.h> // sprintf()
