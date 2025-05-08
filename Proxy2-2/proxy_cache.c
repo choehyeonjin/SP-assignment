@@ -26,18 +26,9 @@
 #include <dirent.h>
 #include <sys/wait.h>
 #include <arpa/inet.h>
-#include <sys/file.h>
-#include <signal.h>
-#include <sys/mman.h>
 
 #define PORT 39999
 #define BUF_SIZE 2048
-
-int* total_hit;
-int* total_miss;
-time_t startTime;
-time_t endTime;
-char log_path[300];
 
 // =================================================================
 // Function     : sha1_hash
@@ -81,30 +72,6 @@ char* getHomeDir(char* home) {
 }
 
 // =================================================================
-// Function     : sigHandler
-// -----------------------------------------------------------------
-// Input        : int signo - Signal number (e.g., SIGINT)
-// Output       : void
-// Purpose      : Handle SIGINT signal. When Ctrl+C is received, logs the
-//                total execution time and number of HIT and MISS requests
-//                to the log file and exits.
-// =================================================================
-
-void sigHandler(int signo) {
-	time(&endTime); // save program end time
-
-	chdir(log_path); // cd to ~/logfile
-	FILE* fp = fopen("logfile.txt", "a");
-	flock(fileno(fp), LOCK_EX);
-
-	fprintf(fp, "[Terminated] run time: %ld sec. #request hit : %d, miss : %d\n",
-		endTime - startTime, *total_hit, *total_miss);
-	flock(fileno(fp), LOCK_UN);
-	fclose(fp);
-	exit(0);
-}
-
-// =================================================================
 // Function     : main
 // -----------------------------------------------------------------
 // Input        : -
@@ -115,27 +82,15 @@ void sigHandler(int signo) {
 // =================================================================
 
 int main() {
-	time(&startTime); // save program start time
-
 	// get home dir path
 	char home[256];
 	getHomeDir(home);
 
 	// open logfile
+	char log_path[300];
 	sprintf(log_path, "%s/logfile", home); // ~/logfile
 	mkdir(log_path, 0777); // create log dir
 
-	// allocate shared memory using mmap
-	total_hit = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,
-		MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	total_miss = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE,
-		MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	// initialize hit and miss counters to 0
-	*total_hit = 0;
-	*total_miss = 0;
-
-	signal(SIGINT, sigHandler); // register SIGINT handler to handle ctrl+c termination
-	
 	struct sockaddr_in server, client; // socket address struct
 	int client_len = sizeof(client); // client's socket address size
 	int sd, cd; // server, client socket descriptor
@@ -163,6 +118,7 @@ int main() {
 			time(&childStartTime); // save child start time
 
 			close(sd); // close server socket
+
 			char buf[BUF_SIZE] = { 0, };
 			char tmp[BUF_SIZE] = { 0, };
 			char url[BUF_SIZE] = { 0, };
@@ -214,6 +170,7 @@ int main() {
 			cache_filename[37] = '\0';
 
 			// check hit or miss
+			int hit = 0, miss = 0;
 			int hitFlag = 0;
 			if (isURL) {
 				struct dirent* pFile;
@@ -233,11 +190,10 @@ int main() {
 			// open log file
 			chdir(log_path); // cd to ~/logfile
 			FILE* fp = fopen("logfile.txt", "a");
-			flock(fileno(fp), LOCK_EX);
 
 			// miss
 			if (!hitFlag && isURL) {
-				(*total_miss)++;
+				miss++;
 				// create response data
 				sprintf(response_data,
 					"<h1>MISS</h1><br>"
@@ -246,12 +202,13 @@ int main() {
 					"kw2023202070", inet_ntoa(client.sin_addr), ntohs(client.sin_port), url);
 
 				// write miss log
-				fprintf(fp, "[Miss]%s-[%02d/%02d/%02d, %02d:%02d:%02d]\n",
-					url, lt->tm_year + 1900, lt->tm_mon + 1,
-					lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec);
-				flock(fileno(fp), LOCK_UN);
-				fclose(fp);
-
+				if (fp != NULL) { 
+					fprintf(fp, "[MISS] ServerPID : %d | %s - [%04d/%02d/%02d, %02d:%02d:%02d]\n",
+						getpid(), url,
+						lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+						lt->tm_hour, lt->tm_min, lt->tm_sec);
+					fflush(fp); // flush immediately
+				}
 				// create cache file
 				chdir(dir_path); // cd to ~/cache/xxx
 				creat(cache_filename, 0777);
@@ -259,7 +216,7 @@ int main() {
 
 			// hit
 			else if (hitFlag && isURL) {
-				(*total_hit)++;
+				hit++;
 				// create response data
 				sprintf(response_data,
 					"<h1>HIT</h1><br>"
@@ -268,12 +225,15 @@ int main() {
 					"kw2023202070", inet_ntoa(client.sin_addr), ntohs(client.sin_port), url);
 
 				// write hit log
-				fprintf(fp, "[Hit]%s/%s-[%02d/%02d/%02d, %02d:%02d:%02d]\n",
-					cache_dirname, cache_filename, lt->tm_year + 1900,
-					lt->tm_mon + 1, lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec);
-				fprintf(fp, "[Hit]%s\n", url);
-				flock(fileno(fp), LOCK_UN);
-				fclose(fp);
+				if (fp != NULL) { 
+					fprintf(fp, "[HIT] ServerPID : %d | %s/%s - [%04d/%02d/%02d, %02d:%02d:%02d]\n",
+						getpid(), cache_dirname, cache_filename,
+						lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+						lt->tm_hour, lt->tm_min, lt->tm_sec);
+					fflush(fp);
+					fprintf(fp, "[HIT] %s\n", url);
+					fflush(fp);
+				}
 			}
 			// create response header
 			sprintf(response_header, "HTTP/1.0 200 OK\r\n"
@@ -284,6 +244,18 @@ int main() {
 			// write(send) response message to client(web browser)
 			write(cd, response_header, strlen(response_header));
 			write(cd, response_data, strlen(response_data));
+
+			time_t childEndTime;
+			time(&childEndTime); // save child end time
+
+			// write child termination log
+			if (isURL) {
+				int runTime = childEndTime - childStartTime;
+				fprintf(fp, "[Terminated] ServerPID : %d | run time : %d sec. #request hit : %d, miss : %d\n",
+					getpid(), runTime, hit, miss);
+				fflush(fp);
+				fclose(fp);
+			}
 
 			printf("[%s : %d] client was disconnected\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 			close(cd); // close client socket
