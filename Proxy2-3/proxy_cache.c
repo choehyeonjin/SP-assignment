@@ -43,8 +43,8 @@
 // Purpose      : Handle SIGALRM. Print timeout message and exit
 // =================================================================
 static void sig_alarm(int signo) {
-	printf("[Timeout] No response received from web server for %d seconds.\n", TIMEOUT);
-	exit(1);
+	printf("========== no response ==========\n");
+	exit(1); // exit child process
 }
 
 // =================================================================
@@ -63,14 +63,12 @@ static void sig_chld(int signo) {
 // -----------------------------------------------------------------
 // Purpose      : Setup signal handlers for SIGALRM and SIGCHLD
 // =================================================================
-void signalHandlers() {
+void signalHandler() {
 	if (signal(SIGCHLD, sig_chld) == SIG_ERR) {
-		perror("signal(SIGCHLD)");
-		exit(1);
+		exit(1); // exit child process
 	}
 	if (signal(SIGALRM, sig_alarm) == SIG_ERR) {
-		perror("signal(SIGALRM)");
-		exit(1);
+		exit(1); // exit child process
 	}
 }
 
@@ -123,7 +121,7 @@ char* getHomeDir(char* home) {
 // Purpose      : Convert hostname to IP address using gethostbyname()
 // =================================================================
 
-char getIPAddr(char* addr) {
+char* getIPAddr(char* addr) {
 	struct hostent* hent;
 	char* haddr;
 	int len = strlen(addr);
@@ -145,7 +143,7 @@ char getIPAddr(char* addr) {
 // =================================================================
 
 int main() {
-	signalHandlers();
+	signalHandler();
 
 	// get home dir path
 	char home[256];
@@ -209,7 +207,7 @@ int main() {
 			tok = strtok(NULL, " "); // extract url
 			if (!tok) isURL = 0;
 			strcpy(url, tok);
-			if (strstr(url, ".html") || strstr(url, ".ico") || strstr(url, ".css") || strstr(url, ".txt")) isURL = 0;
+			if (strstr(url, ".ico") || strstr(url, ".css") || strstr(url, ".txt")) isURL = 0;
 
 			char hashed_url[41]; // hashed buffer
 			sha1_hash(url, hashed_url); // get SHA1 hash URL
@@ -248,9 +246,6 @@ int main() {
 				}
 				closedir(pDir);
 			}
-			
-			char response_header[BUF_SIZE] = { 0, };
-			char response_data[2 * BUF_SIZE] = { 0, };
 
 			// open log file
 			chdir(log_path); // cd to ~/logfile
@@ -258,15 +253,17 @@ int main() {
 
 			// hit
 			if (hitFlag && isURL) {
+				printf("========== HIT ==========\n");
+				printf("========== send cache to browser ==========\n");
 				hit++;
 
-				// write cached response to client(web browser)
+				// open cache file and send response to client(web browser)
 				chdir(dir_path);
 				FILE* cache = fopen(cache_filename, "r");
 				char filedata[BUF_SIZE * 2] = { 0 };
-				fread(filedata, sizeof(char), BUF_SIZE * 2, cache);
+				size_t cache_len = fread(filedata, sizeof(char), sizeof(filedata), cache);
 				fclose(cache);
-				write(cd, filedata, strlen(filedata)); 
+				write(cd, filedata, cache_len);
 
 				// write hit log
 				if (fp) {
@@ -283,45 +280,99 @@ int main() {
 			// miss
 			else if (!hitFlag && isURL) {
 				miss++;
+				printf("========== MISS ==========\n");
 
-				// extract hostname from url
-				char hostname[256];
-				const char* start = strstr(url, "//");
-				if (!start) exit(1);
-				start += 2;
-				int i;
-				for (i = 0; i < sizeof(hostname) - 1 && start[i] && start[i] != '/'; i++) {
-					hostname[i] = start[i];
+				// GET http://example.com:8080/index.html HTTP/1.1
+				// extract hostname, port, path from buf(browser request)
+				char method[16], uri[1024], http_version[32];
+				char parsed_hostname[256] = { 0 }, parsed_port[8] = "80", parsed_path[1024] = "/";
+				sscanf(buf, "%s %s %s", method, uri, http_version); // extract GET, http://..., HTTP/1.1 from buf
+
+				// http://hostname[:port]/path
+				if (strncmp(uri, "http://", 7) == 0) {
+					char* host_begin = uri + 7; // next to "http://"
+					char* path_begin = strchr(host_begin, '/'); // divide by "/"
+
+					if (path_begin) {
+						strncpy(parsed_path, path_begin, sizeof(parsed_path) - 1);
+						*path_begin = '\0'; // hostname:port
+					}
+
+					// if port exists split host:port
+					char* colon = strchr(host_begin, ':');
+					if (colon) {
+						*colon = '\0';
+						strncpy(parsed_hostname, host_begin, sizeof(parsed_hostname) - 1);
+						strncpy(parsed_port, colon + 1, sizeof(parsed_port) - 1);
+					}
+					else {
+						strncpy(parsed_hostname, host_begin, sizeof(parsed_hostname) - 1);
+					}
 				}
-				hostname[i] = '\0';
 
-				char* ip = getIPAddr(hostname); // get ip address from hostname
+				char* ip = getIPAddr(parsed_hostname); // get origin server ip from request hostname
 				if (!ip) exit(1);
 
 				int od; // origin server socket descriptor
 				struct sockaddr_in origin; // socket address struct
 				od = socket(AF_INET, SOCK_STREAM, 0); // create socket
+				if (od < 0) {
+					printf("socket error\n");
+				}
 
 				// server's socket address initialization
 				memset((char*)&origin, '\0', sizeof(origin));
 				origin.sin_family = AF_INET;
 				origin.sin_port = htons(ORIGIN_PORT);
-				server.sin_addr.s_addr = inet_addr(ip);
+				inet_pton(AF_INET, ip, &origin.sin_addr);
 
-				connect(od, (struct sockaddr*)&origin, sizeof(origin)); // connect to origin server
-				write(od, buf, strlen(buf)); // send HTTP request from web browser to origin server 
+				// connect(od, (struct sockaddr*)&origin, sizeof(origin)); // connect to origin server
+				if (connect(od, (struct sockaddr*)&origin, sizeof(origin)) < 0) {
+					printf("connect error, exit child\n");
+					exit(1);
+				}
+				else printf("========== [%s :% d] connect with origin server ==========\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 
-				alarm(TIMEOUT);
-				char res_buf[BUF_SIZE * 2] = { 0 };
-				int len = read(od, res_buf, BUF_SIZE * 2); // receive HTTP response from origin server 
-				alarm(0);
+				// create request line for origin server
+				char fixed_request[BUF_SIZE * 2] = { 0 };
+				sprintf(fixed_request, "%s %s HTTP/1.0\r\n", method, parsed_path);
+
+				// extract request header lines below "Host" from buf
+				char* header_start = strstr(buf, "\r\n");
+				if (header_start) {
+					strncat(fixed_request, header_start + 2, sizeof(fixed_request) - strlen(fixed_request) - 1);
+				}
+
+				// include required request headers
+				if (!strstr(fixed_request, "Connection:")) {
+					strcat(fixed_request, "Connection: close\r\n");
+				}
+				if (!strstr(fixed_request, "User-Agent:")) {
+					strcat(fixed_request, "User-Agent: Mozilla/5.0\r\n");
+				}
+				strcat(fixed_request, "\r\n"); // end of request headers
+
+				// send HTTP request from web browser to origin server 
+				write(od, fixed_request, strlen(fixed_request));
+
+				// receive HTTP response from origin server
+				int total = 0;
+				int len;
+				char res_buf[BUF_SIZE * 4] = { 0 };
+				alarm(TIMEOUT); // set 10sec alarm
+				while ((len = read(od, res_buf + total, BUF_SIZE * 4 - total)) > 0) {  
+					total += len;
+				}
+				alarm(0); // stop alarm
+				printf("========== response buffer ==========\n%s\n", res_buf);
 
 				write(cd, res_buf, len); // send HTTP response from origin server to web browser
 
 				// create cache file
 				chdir(dir_path); // cd to ~/cache/xxx
-				FILE* cache = fopen(cache_filename, "w"); // 0777
-				fwrite(res_buf, sizeof(char), len, cache); // save response into cache file
+				FILE* cache = fopen(cache_filename, "w");
+				chmod(cache_filename, 0777);
+				fwrite(res_buf, sizeof(char), len, cache); // store response into cache file
 				fclose(cache);
 
 				// write miss log
@@ -332,7 +383,7 @@ int main() {
 						lt->tm_hour, lt->tm_min, lt->tm_sec);
 					fflush(fp); // flush immediately
 				}
-				close(sockfd);
+				close(od);
 			}
 			time_t childEndTime;
 			time(&childEndTime); // save child end time
@@ -352,8 +403,6 @@ int main() {
 		}
 		else { // parent process
 			close(cd); // parent doesn¡¯t need client socket, child handles it
-			int status;
-			while (waitpid(-1, &status, WNOHANG) > 0); // reap zombie children
 		}
 	}
 	close(sd); // close server socket
