@@ -1,11 +1,11 @@
 // =================================================================
 // File Name    : proxy_cache.c
-// Date         : 2025/05/15
+// Date         : 2025/05/22
 // OS           : Ubuntu 22.04 LTS 64bits
 // Author       : Choe Hyeon Jin
 // Student ID   : 2023202070
 // -----------------------------------------------------------------
-// Title        : System Programming proxy Assignment #2-3
+// Title        : System Programming proxy Assignment #2-4
 // Description  : A proxy server program that accepts HTTP requests from clients, 
 //							checks if the requested URL has been cached using a SHA1 hash,
 //							and returns a HIT or MISS response.
@@ -34,43 +34,8 @@
 #define PORT 39999
 #define ORIGIN_PORT 80
 #define BUF_SIZE 2048
-#define TIMEOUT 10
-
-// =================================================================
-// Function     : sig_alarm
-// -----------------------------------------------------------------
-// Input        : int signo - signal number
-// Purpose      : Handle SIGALRM. Print timeout message and exit
-// =================================================================
-static void sig_alarm(int signo) {
-	printf("========== no response ==========\n");
-	exit(1); // exit child process
-}
-
-// =================================================================
-// Function     : sig_chld
-// -----------------------------------------------------------------
-// Input        : int signo - signal number
-// Purpose      : Handle SIGCHLD. Reap zombie child processes
-// =================================================================
-static void sig_chld(int signo) {
-	int status;
-	while (waitpid(-1, &status, WNOHANG) > 0);
-}
-
-// =================================================================
-// Function     : signalHandlers
-// -----------------------------------------------------------------
-// Purpose      : Setup signal handlers for SIGALRM and SIGCHLD
-// =================================================================
-void signalHandler() {
-	if (signal(SIGCHLD, sig_chld) == SIG_ERR) {
-		exit(1); // exit child process
-	}
-	if (signal(SIGALRM, sig_alarm) == SIG_ERR) {
-		exit(1); // exit child process
-	}
-}
+time_t startTime;
+int child_count = 0;
 
 // =================================================================
 // Function     : sha1_hash
@@ -81,7 +46,6 @@ void signalHandler() {
 // Purpose      : Converting URLs into 40-digit hexadecimal strings using
 //                SHA1 hash function
 // =================================================================
-
 char* sha1_hash(char* input_url, char* hashed_url) {
 	unsigned char hashed_160bits[20];
 	char hashed_hex[41];
@@ -105,7 +69,6 @@ char* sha1_hash(char* input_url, char* hashed_url) {
 // Output       : char* - Home directory path pointer
 // Purpose      : Returning the home directory path of the current user
 // =================================================================
-
 char* getHomeDir(char* home) {
 	struct passwd* usr_info = getpwuid(getuid());
 	strcpy(home, usr_info->pw_dir);
@@ -120,7 +83,6 @@ char* getHomeDir(char* home) {
 // Output       : char* - dotted decimal IP address (e.g., 192.168.0.1)
 // Purpose      : Convert hostname to IP address using gethostbyname()
 // =================================================================
-
 char* getIPAddr(char* addr) {
 	struct hostent* hent;
 	char* haddr;
@@ -133,6 +95,43 @@ char* getIPAddr(char* addr) {
 }
 
 // =================================================================
+// Function : sig_int
+// -----------------------------------------------------------------
+// Input         : int signo - the signal number
+// Output        : -
+// Purpose       : Log server termination using SIGINT
+// =================================================================
+void sig_int(int signo) {
+	time_t endTime;
+	time(&endTime);
+	int runTime = (int)(endTime - startTime);
+
+	char home[256], log_path[300];
+	getHomeDir(home);
+	sprintf(log_path, "%s/logfile", home);
+	chdir(log_path);
+	FILE* fp = fopen("logfile.txt", "a");
+
+	if (fp) {
+		fprintf(fp, "**SERVER** [Terminated] run time: %d sec. #sub process: %d\n", runTime, child_count);
+		fflush(fp);
+		fclose(fp);
+	}
+	exit(0);
+}
+
+// =================================================================
+// Function     : signalHandlers
+// -----------------------------------------------------------------
+// Purpose      : Setup signal handlers for SIGALRM and SIGCHLD
+// =================================================================
+void signalHandler() {
+	if (signal(SIGINT, sig_int) == SIG_ERR) {
+		exit(1);
+	}
+}
+
+// =================================================================
 // Function     : main
 // -----------------------------------------------------------------
 // Input        : -
@@ -141,8 +140,8 @@ char* getIPAddr(char* addr) {
 //                    checking HIT/MISS based on SHA1 hash,
 //						sending appropriate HTTP response.
 // =================================================================
-
 int main() {
+	time(&startTime);
 	signalHandler();
 
 	// get home dir path
@@ -207,7 +206,7 @@ int main() {
 			tok = strtok(NULL, " "); // extract url
 			if (!tok) isURL = 0;
 			strcpy(url, tok);
-			if (strstr(url, ".ico") || strstr(url, ".css") || strstr(url, ".txt")) isURL = 0;
+			if (strstr(url, ".ico") || strstr(url, ".css") || strstr(url, ".txt") || strstr(url, "firefox")) isURL = 0;
 
 			char hashed_url[41]; // hashed buffer
 			sha1_hash(url, hashed_url); // get SHA1 hash URL
@@ -226,36 +225,40 @@ int main() {
 			sprintf(dir_path, "%s/%s", root_path, cache_dirname); // ~/cache/xxx
 
 			chdir(root_path); // cd to ~/cache 
-			if (isURL) mkdir(cache_dirname, 0777); // create cache subdir
+			mkdir(cache_dirname, 0777); // create cache subdir
 
 			char cache_filename[38]; // remaining 37 chars
 			strncpy(cache_filename, hashed_url + 3, 37);
 			cache_filename[37] = '\0';
 
 			// check hit or miss
-			int hit = 0, miss = 0;
 			int hitFlag = 0;
-			if (isURL) {
-				struct dirent* pFile;
-				DIR* pDir = opendir(cache_dirname);
-				for (pFile = readdir(pDir); pFile; pFile = readdir(pDir)) {
-					if (strcmp(pFile->d_name, cache_filename) == 0) { // hit
-						hitFlag = 1;
-						break;
-					}
+			struct dirent* pFile;
+			DIR* pDir = opendir(cache_dirname);
+			for (pFile = readdir(pDir); pFile; pFile = readdir(pDir)) {
+				if (strcmp(pFile->d_name, cache_filename) == 0) { // hit
+					hitFlag = 1;
+					break;
 				}
-				closedir(pDir);
 			}
+			closedir(pDir);
 
 			// open log file
 			chdir(log_path); // cd to ~/logfile
 			FILE* fp = fopen("logfile.txt", "a");
 
 			// hit
-			if (hitFlag && isURL) {
+			if (hitFlag) {
 				printf("========== HIT ==========\n");
-				printf("========== send cache to browser ==========\n");
-				hit++;
+				// write hit log only input url
+				if (isURL && fp) {
+					fprintf(fp, "[HIT]%s/%s-[%04d/%02d/%02d, %02d:%02d:%02d]\n", cache_dirname, cache_filename,
+						lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+						lt->tm_hour, lt->tm_min, lt->tm_sec);
+					fflush(fp);
+					fprintf(fp, "[HIT]%s\n", url);
+					fflush(fp);
+				}
 
 				// open cache file and send response to client(web browser)
 				chdir(dir_path);
@@ -264,23 +267,18 @@ int main() {
 				size_t cache_len = fread(filedata, sizeof(char), sizeof(filedata), cache);
 				fclose(cache);
 				write(cd, filedata, cache_len);
-
-				// write hit log
-				if (fp) {
-					fprintf(fp, "[HIT] ServerPID : %d | %s/%s - [%04d/%02d/%02d, %02d:%02d:%02d]\n",
-						getpid(), cache_dirname, cache_filename,
-						lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
-						lt->tm_hour, lt->tm_min, lt->tm_sec);
-					fflush(fp);
-					fprintf(fp, "[HIT] %s\n", url);
-					fflush(fp);
-				}
 			}
 
 			// miss
-			else if (!hitFlag && isURL) {
-				miss++;
+			else if (!hitFlag) {
 				printf("========== MISS ==========\n");
+				// write miss log only input url
+				if (isURL && fp) {
+					fprintf(fp, "[MISS]%s-[%04d/%02d/%02d, %02d:%02d:%02d]\n", url,
+						lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+						lt->tm_hour, lt->tm_min, lt->tm_sec);
+					fflush(fp); // flush immediately
+				}
 
 				// GET http://example.com:8080/index.html HTTP/1.1
 				// extract hostname, port, path from buf(browser request)
@@ -316,9 +314,6 @@ int main() {
 				int od; // origin server socket descriptor
 				struct sockaddr_in origin; // socket address struct
 				od = socket(AF_INET, SOCK_STREAM, 0); // create socket
-				if (od < 0) {
-					printf("socket error\n");
-				}
 
 				// server's socket address initialization
 				memset((char*)&origin, '\0', sizeof(origin));
@@ -353,17 +348,20 @@ int main() {
 				strcat(fixed_request, "\r\n"); // end of request headers
 
 				// send HTTP request from web browser to origin server 
+				printf("========== send request ==========\n%s\n", fixed_request);
 				write(od, fixed_request, strlen(fixed_request));
 
 				// receive HTTP response from origin server
 				int total = 0;
 				int len;
 				char res_buf[BUF_SIZE * 10] = { 0 };
-				alarm(TIMEOUT); // set 10sec alarm
 				while ((len = read(od, res_buf + total, BUF_SIZE * 4 - total)) > 0) {  
 					total += len;
 				}
-				alarm(0); // stop alarm
+				if (total == 0) {
+					printf("========== WARNING: No response received ==========\n");
+				}
+
 				printf("========== response buffer ==========\n%s\n", res_buf);
 
 				write(cd, res_buf, total); // send HTTP response from origin server to web browser
@@ -375,34 +373,17 @@ int main() {
 				fwrite(res_buf, sizeof(char), total, cache); // store HTTP response into cache file
 				fclose(cache);
 
-				// write miss log
-				if (fp) {
-					fprintf(fp, "[MISS] ServerPID : %d | %s - [%04d/%02d/%02d, %02d:%02d:%02d]\n",
-						getpid(), url,
-						lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
-						lt->tm_hour, lt->tm_min, lt->tm_sec);
-					fflush(fp); // flush immediately
-				}
 				close(od);
 			}
-			time_t childEndTime;
-			time(&childEndTime); // save child end time
-
-			// write child termination log
-			if (isURL && fp) {
-				int runTime = childEndTime - childStartTime;
-				fprintf(fp, "[Terminated] ServerPID : %d | run time : %d sec. #request hit : %d, miss : %d\n",
-					getpid(), runTime, hit, miss);
-				fflush(fp);
-				fclose(fp);
-			}
-
+			if (fp) fclose(fp);
 			printf("[%s : %d] client was disconnected\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 			close(cd); // close client socket
 			exit(0);
 		}
 		else { // parent process
-			close(cd); // parent doesn¡¯t need client socket, child handles it
+			child_count++;
+			close(cd); // parent does not need client socket, child handles it
+			while (waitpid(-1, NULL, WNOHANG) > 0);
 		}
 	}
 	close(sd); // close server socket
